@@ -58,8 +58,9 @@ void _DMA_Stream_Tx_IRQHandler(void)
 
 void HAL_SD_MspInit(SD_HandleTypeDef* sdHandle)
 {
-
+    IRQn_Type IRQn;
     GPIO_InitTypeDef GPIO_InitStruct = {0};
+    
     if(sdHandle->Instance==SDMMC1)
     {
         /* SDMMC1 clock enable */
@@ -88,6 +89,12 @@ void HAL_SD_MspInit(SD_HandleTypeDef* sdHandle)
         GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
         GPIO_InitStruct.Alternate = GPIO_AF12_SDIO1;
         HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+        /* NVIC configuration for SDMMC interrupts */
+        IRQn = SDMMC1_IRQn;
+        HAL_NVIC_SetPriority(IRQn, 5, 0);
+        NVIC_SetVector(IRQn, (uint32_t)&_SDMMC_IRQHandler);
+        HAL_NVIC_EnableIRQ(IRQn);
     }
 }
 
@@ -109,6 +116,9 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
         */
         HAL_GPIO_DeInit(GPIOC, GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12);
         HAL_GPIO_DeInit(GPIOD, GPIO_PIN_2);
+
+        /* Disable NVIC for SDIO interrupts */
+        HAL_NVIC_DisableIRQ(SDMMC1_IRQn);
     }
 }
 
@@ -189,15 +199,15 @@ int sdio_init(void)
 
     /* HAL SD initialization */
     sd_state = HAL_SD_Init(&hsd);
-    /* Configure SD Bus width (4 bits mode selected) */
-    if (sd_state == MSD_OK)
-    {
-        /* Enable wide operation */
-        if (SD_WideBus_Enable(&hsd) != HAL_OK)
-        {
-            sd_state = MSD_ERROR;
-        }
-    }
+    if (sd_state != MSD_OK)
+        return sd_state;
+
+    if (HAL_SD_ConfigSpeedBusOperation(&hsd, SDMMC_SPEED_MODE_DEFAULT) != HAL_OK)
+        return MSD_ERROR;
+
+    /* Enable wide operation */
+    if (SD_WideBus_Enable(&hsd) != HAL_OK)
+        return MSD_ERROR;
 
     return sd_state;
 }
